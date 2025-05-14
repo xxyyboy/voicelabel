@@ -7,7 +7,6 @@ pip install pyQt5
 
 python app1.py
 
-
-![示例图] https://github.com/xxyyboy/voicelabel/blob/main/87955.png
+![示例图](87955.png)
 
 
