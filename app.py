@@ -1,19 +1,28 @@
 import os
 import sys
+import nltk
+from spellchecker import SpellChecker
 from PyQt5.QtWidgets import (QApplication, QWidget, QHBoxLayout, QVBoxLayout, 
                             QTableWidget, QTableWidgetItem, QPushButton, 
-                            QLineEdit, QLabel, QFileDialog, QTextEdit)
+                            QLineEdit, QLabel, QFileDialog, QTextEdit,
+                            QComboBox, QSpinBox, QMessageBox)
 from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtGui import QFont, QFontDatabase
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 
 class AudioTextEditor(QWidget):
     def __init__(self):
         super().__init__()
         self.audio_extensions = ['.mp3', '.wav', '.ogg']
-        self.text_extensions = ['.txt', '.lrc','.normalized.txt']
+        self.text_extensions = ['.txt', '.lrc' , '.normalized.txt']
         self.current_dir = ""
         self.media_player = QMediaPlayer()
         self.current_text_file = None
+        self.spell_checker = SpellChecker()
+        
+        # 下载NLTK数据
+        nltk.download('punkt')
+        nltk.download('averaged_perceptron_tagger')
         
         self.initUI()
         self.setWindowSizeToScreenPercentage(0.5)  # 设置为屏幕的50%
@@ -35,6 +44,29 @@ class AudioTextEditor(QWidget):
         control_layout.addWidget(self.dir_input)
         control_layout.addWidget(browse_btn)
         control_layout.addWidget(load_btn)
+        
+        # 字体控制栏
+        font_control_layout = QHBoxLayout()
+        self.font_combo = QComboBox()
+        self.font_combo.addItems(QFontDatabase().families())
+        self.font_size = QSpinBox()
+        self.font_size.setRange(8, 72)
+        self.font_size.setValue(12)
+        self.font_size.valueChanged.connect(self.change_font)
+        self.font_combo.currentTextChanged.connect(self.change_font)
+        apply_font_btn = QPushButton("应用字体")
+        apply_font_btn.clicked.connect(self.change_font)
+        
+        font_control_layout.addWidget(QLabel("字体:"))
+        font_control_layout.addWidget(self.font_combo)
+        font_control_layout.addWidget(QLabel("大小:"))
+        font_control_layout.addWidget(self.font_size)
+        font_control_layout.addWidget(apply_font_btn)
+        
+        # 文本检查按钮
+        self.check_text_btn = QPushButton("检查文本通顺度")
+        self.check_text_btn.clicked.connect(self.check_text_fluency)
+        font_control_layout.addWidget(self.check_text_btn)
         
         # 文件显示区域
         file_display_layout = QHBoxLayout()
@@ -73,6 +105,7 @@ class AudioTextEditor(QWidget):
         
         # 添加到主布局
         main_layout.addLayout(control_layout)
+        main_layout.addLayout(font_control_layout)
         main_layout.addLayout(file_display_layout, 1)
         main_layout.addLayout(bottom_controls)
         
@@ -174,6 +207,66 @@ class AudioTextEditor(QWidget):
                     f.write(self.text_edit.toPlainText())
             except Exception as e:
                 print(f"保存文本文件出错: {e}")
+    
+    def change_font(self):
+        """更改文本编辑框的字体和大小"""
+        font = QFont(self.font_combo.currentText(), self.font_size.value())
+        self.text_edit.setFont(font)
+    
+    def check_text_fluency(self):
+        """检查文本通顺度并给出建议"""
+        text = self.text_edit.toPlainText()
+        if not text.strip():
+            QMessageBox.information(self, "提示", "文本内容为空，无法检查通顺度")
+            return
+        
+        # 拼写检查
+        words = nltk.word_tokenize(text)
+        misspelled = self.spell_checker.unknown(words)
+        
+        # 基本语法检查（检查词性序列是否合理）
+        tagged = nltk.pos_tag(words)
+        grammar_issues = self.check_grammar_patterns(tagged)
+        
+        suggestions = []
+        
+        # 拼写错误建议
+        for word in misspelled:
+            corrections = self.spell_checker.correction(word)
+            suggestions.append(f"拼写可能错误: '{word}'，建议修改为: '{corrections}'")
+        
+        # 语法问题建议
+        suggestions.extend(grammar_issues)
+        
+        if not suggestions:
+            QMessageBox.information(self, "检查结果", "文本通顺，没有发现明显问题")
+        else:
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("文本通顺度检查结果")
+            msg_box.setText("发现以下可能的问题:")
+            msg_box.setDetailedText("\n".join(suggestions))
+            msg_box.setStandardButtons(QMessageBox.Ok)
+            msg_box.exec_()
+    
+    def check_grammar_patterns(self, tagged_sentence):
+        """检查基本的语法模式"""
+        issues = []
+        prev_tag = None
+        
+        for i, (word, tag) in enumerate(tagged_sentence):
+            # 检查连续的名词（可能缺少动词）
+            if tag.startswith('NN') and prev_tag and prev_tag.startswith('NN'):
+                issues.append(f"语法问题: 位置{i-1}-{i}，连续名词 '{tagged_sentence[i-1][0]}' 和 '{word}' 可能缺少动词")
+            
+            # 检查动词后接名词的情况（中文基本语法）
+            if tag.startswith('NN') and prev_tag and prev_tag.startswith('VB'):
+                pass  # 这是正常情况
+            elif tag.startswith('NN') and prev_tag and not prev_tag.startswith('VB'):
+                issues.append(f"语法问题: 位置{i}，名词 '{word}' 前面可能需要动词")
+            
+            prev_tag = tag
+        
+        return issues
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
