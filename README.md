@@ -5,7 +5,7 @@
 
 pip install pyQt5
 
-python app1.py
+python app.py
 
 ![示例图](87955.png)
 
