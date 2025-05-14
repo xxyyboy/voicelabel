@@ -4,6 +4,7 @@
 测试python3.10
 
 pip install pyQt5
+pip install PyQt5 nltk pyspellchecker
 
 python app.py
 
